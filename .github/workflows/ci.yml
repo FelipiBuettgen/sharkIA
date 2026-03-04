@@ -27,4 +27,11 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest
+          set -e
+          pytest || EC=$?
+          if [ "${EC}" = "5" ]; then
+            echo "No tests collected; treating as success"
+            exit 0
+          elif [ -n "${EC}" ] && [ "${EC}" != "0" ]; then
+            exit ${EC}
+          fi

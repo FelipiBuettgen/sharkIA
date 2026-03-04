@@ -48,5 +48,9 @@ Thumbs.db
 *.temp
 
 # IMPORTANTE: NÃO ignorar arquivos de dados do projeto
-# data/sharkia.db - banco SQLite
+# data/sharkia.db - banco SQLite (gerado automaticamente)
 # data/embeddings.npy - vetores FAISS
+# data/ncm_processado.json - base de NCMs
+
+# Ignorar banco local (será recriado no deploy)
+data/sharkia.db
