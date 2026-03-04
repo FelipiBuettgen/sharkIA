@@ -25,5 +25,5 @@ EXPOSE 8000
 # Variável de ambiente para porta (Railway define automaticamente)
 ENV PORT=8000
 
-# Comando de inicialização
-CMD uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+# Comando de inicialização (JSON format para melhor signal handling)
+CMD ["sh", "-c", "uvicorn src.api.main:app --host 0.0.0.0 --port $PORT"]

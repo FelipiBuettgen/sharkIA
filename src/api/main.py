@@ -46,31 +46,65 @@ app.add_middleware(
 
 # ==================== Startup/Shutdown ====================
 
+# Flag para indicar se o sistema está totalmente pronto
+_sistema_pronto = False
+
 @app.on_event("startup")
 async def startup_event():
     """
     Pré-carrega modelos e sistemas no startup da API.
-    Isso evita o delay na primeira requisição.
+    A inicialização do banco é síncrona, mas o carregamento de modelos
+    é feito em background para não bloquear o healthcheck.
     """
     import asyncio
     print("\n🚀 Iniciando pré-carregamento...")
     
-    # Carregar em thread separada para não bloquear
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _precarregar_sistemas)
+    # Inicializar banco de dados primeiro (síncrono - rápido)
+    try:
+        from src.data.database import inicializar_banco
+        inicializar_banco()
+        print("✅ Banco de dados inicializado")
+    except Exception as e:
+        print(f"⚠️ Erro ao inicializar banco: {e}")
     
-    print("✅ API pronta para receber requisições!\n")
+    # Iniciar carregamento de modelos em background (não bloqueia healthcheck)
+    asyncio.create_task(_carregar_modelos_background())
+    
+    print("✅ API iniciada - modelos carregando em background...\n")
+
+
+async def _carregar_modelos_background():
+    """Carrega modelos em background para não bloquear startup"""
+    import asyncio
+    global _sistema_pronto
+    
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _precarregar_sistemas)
+        _sistema_pronto = True
+        print("✅ Todos os modelos carregados em background!")
+    except Exception as e:
+        print(f"⚠️ Erro no carregamento de modelos: {e}")
+        # Sistemas serão carregados on-demand se necessário
 
 
 def _precarregar_sistemas():
     """Função síncrona para pré-carregamento"""
-    # 1. Carregar busca semântica (modelo de embeddings)
-    _ = get_busca()
-    
-    # 2. Carregar classificador (reutiliza busca + configura IA)
-    _ = get_classificador()
-    
-    print("✅ Todos os sistemas pré-carregados!")
+    try:
+        # 1. Carregar busca semântica (modelo de embeddings)
+        print("⏳ Carregando busca semântica...")
+        _ = get_busca()
+        print("✅ Busca semântica carregada")
+        
+        # 2. Carregar classificador (reutiliza busca + configura IA)
+        print("⏳ Carregando classificador...")
+        _ = get_classificador()
+        print("✅ Classificador carregado")
+        
+        print("✅ Todos os sistemas pré-carregados!")
+    except Exception as e:
+        print(f"⚠️ Erro no pré-carregamento: {e}")
+        # Não re-raise - permite que a API inicie e carregue sob demanda
 
 
 # Modelos de request/response
