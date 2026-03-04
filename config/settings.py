@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv NÃO sobrescreve variáveis já definidas no ambiente (ex: GitHub Secrets)
+load_dotenv(override=False)
 
 # Diretórios
 BASE_DIR = Path(__file__).parent.parent
@@ -26,6 +27,10 @@ EMBEDDING_DIMENSION = 384
 # APIs de IA (gratuitas)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Log de configuração de IA (sem expor chaves)
+print(f"🔑 GROQ_API_KEY: {'✅ configurada' if GROQ_API_KEY else '❌ NÃO configurada'}")
+print(f"🔑 GEMINI_API_KEY: {'✅ configurada' if GEMINI_API_KEY else '❌ NÃO configurada'}")
 
 # Modelo Groq (gratuito: 14.400 req/dia)
 GROQ_MODEL = "llama-3.3-70b-versatile"

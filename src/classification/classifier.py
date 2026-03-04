@@ -35,28 +35,35 @@ class ClassificadorNCM:
     
     def _configurar_ia(self):
         """Configura cliente de IA baseado na disponibilidade"""
+        import os
         
-        if self.provider == "groq" or (self.provider == "auto" and GROQ_API_KEY):
+        # Re-ler do ambiente para garantir (GitHub Secrets são env vars)
+        groq_key = os.getenv("GROQ_API_KEY", "") or GROQ_API_KEY
+        gemini_key = os.getenv("GEMINI_API_KEY", "") or GEMINI_API_KEY
+        
+        print(f"🔑 Configurando IA - Groq: {'✅' if groq_key else '❌'}, Gemini: {'✅' if gemini_key else '❌'}")
+        
+        if self.provider == "groq" or (self.provider == "auto" and groq_key):
             try:
                 from src.classification.groq_client import GroqClient
-                self.ia_client = GroqClient()
+                self.ia_client = GroqClient(api_key=groq_key)
                 self.provider = "groq"
-                print("Usando Groq (Llama 3.1)")
+                print("✅ Usando Groq (Llama 3.1)")
                 return
             except Exception as e:
-                print(f"Groq não disponível: {e}")
+                print(f"⚠️ Groq não disponível: {e}")
         
-        if self.provider == "gemini" or (self.provider == "auto" and GEMINI_API_KEY):
+        if self.provider == "gemini" or (self.provider == "auto" and gemini_key):
             try:
                 from src.classification.gemini_client import GeminiClient
-                self.ia_client = GeminiClient()
+                self.ia_client = GeminiClient(api_key=gemini_key)
                 self.provider = "gemini"
-                print("Usando Google Gemini")
+                print("✅ Usando Google Gemini")
                 return
             except Exception as e:
-                print(f"Gemini não disponível: {e}")
+                print(f"⚠️ Gemini não disponível: {e}")
         
-        print("Nenhuma API de IA configurada. Usando apenas busca semântica.")
+        print("❌ Nenhuma API de IA configurada. Usando apenas busca semântica.")
         self.ia_client = None
     
     def classificar(
