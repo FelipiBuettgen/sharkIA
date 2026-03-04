@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.vscode
+.idea
+*.md
+test_*.py
+Tabela/
