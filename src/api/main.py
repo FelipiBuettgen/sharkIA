@@ -1,6 +1,8 @@
 """
 API REST - SharkIA Classificador NCM
 """
+print("🦈 SharkIA - Iniciando importações...")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -10,7 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Importar funções de banco de dados
+print("📦 Importando módulo de banco de dados...")
+
+# Importar funções de banco de dados (o módulo auto-inicializa)
 from src.data.database import (
     criar_pesquisa_pendente,
     confirmar_pesquisa,
@@ -28,11 +32,15 @@ from src.data.database import (
     deletar_classificacoes_por_produto
 )
 
+print("✅ Banco de dados importado!")
+
 app = FastAPI(
     title="🦈 SharkIA - Classificador NCM",
     description="API inteligente para classificação de produtos em códigos NCM",
     version="2.0.0"
 )
+
+print("✅ FastAPI app criado!")
 
 # CORS para acesso do frontend
 app.add_middleware(
@@ -53,24 +61,19 @@ _sistema_pronto = False
 async def startup_event():
     """
     Pré-carrega modelos e sistemas no startup da API.
-    A inicialização do banco é síncrona, mas o carregamento de modelos
+    O banco já foi inicializado no import. Carregamento de modelos
     é feito em background para não bloquear o healthcheck.
     """
     import asyncio
-    print("\n🚀 Iniciando pré-carregamento...")
-    
-    # Inicializar banco de dados primeiro (síncrono - rápido)
-    try:
-        from src.data.database import inicializar_banco
-        inicializar_banco()
-        print("✅ Banco de dados inicializado")
-    except Exception as e:
-        print(f"⚠️ Erro ao inicializar banco: {e}")
+    print("\n🚀 API iniciando...")
     
     # Iniciar carregamento de modelos em background (não bloqueia healthcheck)
-    asyncio.create_task(_carregar_modelos_background())
-    
-    print("✅ API iniciada - modelos carregando em background...\n")
+    try:
+        asyncio.create_task(_carregar_modelos_background())
+        print("✅ API pronta - modelos carregando em background...\n")
+    except Exception as e:
+        print(f"⚠️ Erro ao criar task de carregamento: {e}")
+        print("✅ API pronta - modelos serão carregados sob demanda\n")
 
 
 async def _carregar_modelos_background():
@@ -195,7 +198,12 @@ async def root():
 @app.get("/health")
 async def health():
     """Verifica saúde da API"""
-    return {"status": "ok", "servico": "sharkia", "versao": "2.0.0"}
+    return {
+        "status": "ok", 
+        "servico": "sharkia", 
+        "versao": "2.0.0",
+        "modelos_carregados": _sistema_pronto
+    }
 
 
 @app.get("/status")

@@ -266,6 +266,66 @@ def inicializar_banco():
         
         conn.commit()
         print(f"✅ Banco de dados inicializado: {DATABASE_PATH}")
+    
+    # Verificar se a tabela ncms está vazia e popular se necessário
+    _popular_ncms_se_vazio()
+
+
+def _popular_ncms_se_vazio():
+    """Popula a tabela ncms a partir do JSON se estiver vazia"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM ncms")
+        count = cursor.fetchone()[0]
+        
+        if count > 0:
+            print(f"   ℹ️ Tabela ncms já possui {count} registros")
+            return
+        
+        print("📂 Populando tabela ncms a partir do JSON...")
+        
+        # Tentar carregar do ncm_processado.json
+        ncm_json_path = DATA_DIR / "ncm_processado.json"
+        
+        if not ncm_json_path.exists():
+            print(f"   ⚠️ Arquivo {ncm_json_path} não encontrado!")
+            return
+        
+        try:
+            import json
+            with open(ncm_json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            ncms = data.get('ncms', [])
+            print(f"   📦 Carregando {len(ncms)} NCMs do JSON...")
+            
+            for ncm in ncms:
+                codigo = ncm.get('codigo', '').replace('.', '')
+                codigo_formatado = ncm.get('codigo', '')
+                descricao = ncm.get('descricao', '')
+                capitulo = codigo[:2] if len(codigo) >= 2 else ''
+                posicao = codigo[:4] if len(codigo) >= 4 else ''
+                data_inicio = ncm.get('data_inicio', '')
+                data_fim = ncm.get('data_fim', '')
+                
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO ncms 
+                        (codigo, codigo_formatado, descricao, capitulo, posicao, data_inicio, data_fim)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (codigo, codigo_formatado, descricao, capitulo, posicao, data_inicio, data_fim))
+                except Exception as e:
+                    print(f"   ⚠️ Erro ao inserir NCM {codigo}: {e}")
+            
+            conn.commit()
+            
+            # Verificar quantos foram inseridos
+            cursor.execute("SELECT COUNT(*) FROM ncms")
+            total = cursor.fetchone()[0]
+            print(f"   ✅ {total} NCMs carregados com sucesso!")
+            
+        except Exception as e:
+            print(f"   ❌ Erro ao carregar NCMs: {e}")
 
 
 
