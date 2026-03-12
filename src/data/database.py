@@ -1719,5 +1719,179 @@ def estatisticas_ncms() -> Dict:
         }
 
 
+# ==================== Tabelas de Usuário ====================
+
+def _criar_tabelas_usuario(conn):
+    """Cria tabelas de classificações e descartes por usuário"""
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS classificacoes_usuario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id TEXT NOT NULL,
+            classificacao_id TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            ncm_codigo TEXT NOT NULL,
+            ncm_descricao TEXT,
+            score_match REAL DEFAULT 0.0,
+            metodo TEXT,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (classificacao_id) REFERENCES classificacoes(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_classif_usuario_id
+        ON classificacoes_usuario(usuario_id)
+    """)
+
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_classif_usuario_unico
+        ON classificacoes_usuario(usuario_id, LOWER(TRIM(produto)), ncm_codigo)
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS descartes_usuario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            ncm_codigo TEXT NOT NULL,
+            motivo TEXT,
+            contador INTEGER DEFAULT 1,
+            timestamp TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_descartes_usuario_id
+        ON descartes_usuario(usuario_id)
+    """)
+
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_descartes_usuario_unico
+        ON descartes_usuario(usuario_id, LOWER(TRIM(produto)), ncm_codigo)
+    """)
+
+    conn.commit()
+
+
+def inserir_classificacao_usuario(
+    usuario_id: str,
+    classificacao_id: str,
+    produto: str,
+    ncm_codigo: str,
+    ncm_descricao: str = "",
+    score_match: float = 0.0,
+    metodo: str = ""
+) -> Dict:
+    """Registra classificação aceita para um usuário específico"""
+    timestamp = datetime.now().isoformat()
+    ncm_norm = normalizar_ncm(ncm_codigo)
+
+    with _db_lock:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO classificacoes_usuario
+                    (usuario_id, classificacao_id, produto, ncm_codigo, ncm_descricao, score_match, metodo, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (usuario_id, classificacao_id, produto.strip(), ncm_norm, ncm_descricao, score_match, metodo, timestamp))
+            except sqlite3.IntegrityError:
+                # Já existe — atualizar timestamp
+                cursor.execute("""
+                    UPDATE classificacoes_usuario
+                    SET classificacao_id = ?, score_match = ?, metodo = ?, timestamp = ?
+                    WHERE usuario_id = ? AND LOWER(TRIM(produto)) = LOWER(TRIM(?)) AND ncm_codigo = ?
+                """, (classificacao_id, score_match, metodo, timestamp, usuario_id, produto.strip(), ncm_norm))
+
+    return {
+        "usuario_id": usuario_id,
+        "classificacao_id": classificacao_id,
+        "produto": produto.strip(),
+        "ncm_codigo": ncm_norm,
+        "ncm_descricao": ncm_descricao,
+        "timestamp": timestamp
+    }
+
+
+def listar_classificacoes_usuario(usuario_id: str, limite: int = 100) -> List[Dict]:
+    """Retorna classificações aceitas de um usuário"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM classificacoes_usuario
+            WHERE usuario_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (usuario_id, limite))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def registrar_descarte_usuario(
+    usuario_id: str,
+    produto: str,
+    ncm_codigo: str,
+    motivo: str = ""
+) -> Dict:
+    """Registra descarte para um usuário específico"""
+    ncm_limpo = normalizar_ncm(ncm_codigo)
+    timestamp = datetime.now().isoformat()
+
+    with _db_lock:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, contador FROM descartes_usuario
+                WHERE usuario_id = ? AND LOWER(TRIM(produto)) = LOWER(TRIM(?)) AND ncm_codigo = ?
+            """, (usuario_id, produto, ncm_limpo))
+
+            existente = cursor.fetchone()
+            if existente:
+                novo_cont = existente['contador'] + 1
+                cursor.execute("""
+                    UPDATE descartes_usuario
+                    SET contador = ?, timestamp = ?, motivo = ?
+                    WHERE id = ?
+                """, (novo_cont, timestamp, motivo, existente['id']))
+                return {"usuario_id": usuario_id, "ncm": ncm_limpo, "contador": novo_cont}
+            else:
+                cursor.execute("""
+                    INSERT INTO descartes_usuario (usuario_id, produto, ncm_codigo, motivo, contador, timestamp)
+                    VALUES (?, ?, ?, ?, 1, ?)
+                """, (usuario_id, produto.strip(), ncm_limpo, motivo, timestamp))
+                return {"usuario_id": usuario_id, "ncm": ncm_limpo, "contador": 1}
+
+
+def listar_descartes_usuario(usuario_id: str, limite: int = 100) -> List[Dict]:
+    """Retorna descartes de um usuário"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM descartes_usuario
+            WHERE usuario_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (usuario_id, limite))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def deletar_classificacao_usuario(usuario_id: str, classificacao_id: str) -> bool:
+    """Remove classificação do registro do usuário"""
+    with _db_lock:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM classificacoes_usuario
+                WHERE usuario_id = ? AND classificacao_id = ?
+            """, (usuario_id, classificacao_id))
+            return cursor.rowcount > 0
+
+
 # Inicializar banco ao importar módulo
 inicializar_banco()
+
+# Criar tabelas de usuário (migração segura)
+with get_connection() as _conn:
+    _criar_tabelas_usuario(_conn)
