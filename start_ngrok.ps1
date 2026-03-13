@@ -8,9 +8,9 @@
 # ==============================================
 
 param(
-    [int]$Port = 8000,
+    [int]$Port = 8001,
     [string]$NgrokConfig = "",
-    [int]$NgrokInspectPort = 4040
+    [int]$NgrokInspectPort = 4041
 )
 
 $ErrorActionPreference = "Stop"
