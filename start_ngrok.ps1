@@ -2,11 +2,15 @@
 # SharkIA - Iniciar API com ngrok
 # ==============================================
 # Uso: .\start_ngrok.ps1
+# Uso com config separado:
+#   .\start_ngrok.ps1 -NgrokConfig ".\ngrok-shark.yml" -NgrokInspectPort 4041
 # Pre-requisitos: Python 3.11+, ngrok instalado e autenticado
 # ==============================================
 
 param(
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    [string]$NgrokConfig = "",
+    [int]$NgrokInspectPort = 4040
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,14 +115,25 @@ Write-Host "  [OK] API respondendo em http://localhost:$Port" -ForegroundColor G
 
 # ---- Iniciar ngrok ----
 Write-Host ""
-Write-Host "[>] Criando tunel ngrok..." -ForegroundColor Yellow
+Write-Host "[>] Criando tunel ngrok (inspect port: $NgrokInspectPort)..." -ForegroundColor Yellow
 
-# Matar ngrok anterior (se houver)
-Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 1
+# Matar ngrok anterior que esteja usando a mesma porta de inspect (se houver)
+$existingNgrokOnPort = Get-NetTCPConnection -LocalPort $NgrokInspectPort -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique
+if ($existingNgrokOnPort) {
+    Write-Host "  [!] Porta inspect $NgrokInspectPort em uso. Liberando..." -ForegroundColor DarkYellow
+    $existingNgrokOnPort | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+}
 
 # Iniciar ngrok em background
-$ngrokProcess = Start-Process ngrok -ArgumentList "http $Port" -PassThru -WindowStyle Hidden
+# --request-header-add injeta o header que pula o aviso do ngrok gratis
+$ngrokArgs = "http $Port --request-header-add 'ngrok-skip-browser-warning:true'"
+if ($NgrokConfig) {
+    $ngrokArgs += " --config `"$NgrokConfig`""
+    Write-Host "  [i] Usando config: $NgrokConfig" -ForegroundColor DarkGray
+}
+$ngrokProcess = Start-Process ngrok -ArgumentList $ngrokArgs -PassThru -WindowStyle Hidden
 
 # Aguardar ngrok criar o tunel
 Start-Sleep -Seconds 5
@@ -130,7 +145,7 @@ $ngrokAttempt = 0
 
 while ($ngrokAttempt -lt $maxNgrokAttempts) {
     try {
-        $tunnels = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels" -TimeoutSec 3 -ErrorAction Stop
+        $tunnels = Invoke-RestMethod -Uri "http://localhost:$NgrokInspectPort/api/tunnels" -TimeoutSec 3 -ErrorAction Stop
         $ngrokUrl = ($tunnels.tunnels | Where-Object { $_.proto -eq "https" } | Select-Object -First 1).public_url
         if (-not $ngrokUrl) {
             $ngrokUrl = ($tunnels.tunnels | Select-Object -First 1).public_url
@@ -169,7 +184,7 @@ Write-Host "  Swagger UI:" -ForegroundColor White
 Write-Host "     $ngrokUrl/docs" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  ngrok Dashboard:" -ForegroundColor White
-Write-Host "     http://localhost:4040" -ForegroundColor Cyan
+Write-Host "     http://localhost:$NgrokInspectPort" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  ==========================================" -ForegroundColor Green
 Write-Host "  Pressione Ctrl+C para encerrar tudo" -ForegroundColor Yellow
@@ -203,8 +218,10 @@ try {
     Write-Host ""
     Write-Host "[!] Encerrando SharkIA..." -ForegroundColor Yellow
 
-    # Parar ngrok
-    Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    # Parar ngrok (apenas o processo desta instancia)
+    if ($ngrokProcess) {
+        Stop-Process -Id $ngrokProcess.Id -Force -ErrorAction SilentlyContinue
+    }
 
     # Parar job da API
     if ($apiJob) {
